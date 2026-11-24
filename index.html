@@ -1197,13 +1197,53 @@ function answerQuery(raw){
  // arbitri
  if(/arbitr/.test(q)){const RF=S.referee||{};const ks=Object.keys(RF);let f,lab;if(/vittor/.test(q)){f=k=>RF[k].w;lab='Vittorie Vanoli';}else{f=k=>RF[k].games;lab='Partite arbitrate';}return {title:'Arbitri · '+lab,cols:['#','Arbitro',lab,'Record Vanoli','%'],rows:topN(ks,f).map((k,i)=>[i+1,esc(k),'<b>'+f(k)+'</b>',RF[k].w+'-'+RF[k].l,(RF[k].winpct*100).toFixed(0)+'%'])};}
  // squadre
- if(/squadr/.test(q)){const OC=S.oppclub||{};const ks=Object.keys(OC);const nera=/bestia|bestie|ci hanno battut|battuto la vanoli|perso contro/.test(q);const f=nera?(k=>OC[k].l):(k=>OC[k].w);return {title:nera?'Bestie nere (ci hanno battuto di più)':'Squadre più battute dalla Vanoli',cols:['#','Squadra',nera?'Sconfitte VBC':'Vittorie VBC','Record (V-S)'],rows:topN(ks,f).map((k,i)=>[i+1,clink(k),'<b>'+f(k)+'</b>',OC[k].w+'-'+OC[k].l])};}
+ if(/squadr|bestia|bestie/.test(q)){const OC=S.oppclub||{};const ks=Object.keys(OC);const nera=/bestia|bestie|ci hanno battut|battuto la vanoli|perso contro/.test(q);const f=nera?(k=>OC[k].l):(k=>OC[k].w);return {title:nera?'Bestie nere (ci hanno battuto di più)':'Squadre più battute dalla Vanoli',cols:['#','Squadra',nera?'Sconfitte VBC':'Vittorie VBC','Record (V-S)'],rows:topN(ks,f).map((k,i)=>[i+1,clink(k),'<b>'+f(k)+'</b>',OC[k].w+'-'+OC[k].l])};}
  // record di squadra / partite
  const CT=(S.records||{}).club_top||{};
  const ctMap=[[/(vittoria|successo).*larg/,'Vittoria più larga'],[/sconfitta.*larg/,'Sconfitta più larga'],[/spettator|pubblico|affluenza/,'Più spettatori'],[/rimonta/,'Vittoria in rimonta'],[/((punteggio|piu punti|prolific).*(gara|partita))|((gara|partita).*(piu punti|prolific|punteggio))/,'Punteggio più alto']];
  for(const mm of ctMap){if(mm[0].test(q)&&CT[mm[1]])return {title:mm[1],cols:['#','Valore','Partita'],rows:CT[mm[1]].slice(0,Math.min(N,5)).map((x,i)=>[i+1,'<b>'+esc(x.v)+'</b>',(x.mid?`<a onclick="nav('match',{id:${x.mid}})" style="color:var(--blue2);cursor:pointer">${esc(x.opp)} · ${fmtDate(x.date)}</a>`:esc(x.opp)+' · '+fmtDate(x.date))])};}
  // giocatori avversari
  if(oppCtx&&/(punti|segn|marcator|minut|valutazion)/.test(q)){const OP=S.oppplayer||{};const ks=Object.keys(OP);let f,lab;if(/minut/.test(q)){f=i=>OP[i].tot_min;lab='Minuti contro';}else if(/valutazion/.test(q)){f=i=>(OP[i].avg_val||0)*OP[i].games;lab='Val. contro (tot)';}else{f=i=>oppTotPts(OP[i]);lab='Punti contro (tot)';}return {title:'Giocatori avversari · '+lab,cols:['#','Giocatore',lab,'Partite'],rows:topN(ks,f).map((pid,i)=>[i+1,plink(pid),'<b>'+Math.round(f(pid))+'</b>',OP[pid].games])};}
+ // ---- scheda di un giocatore citato per nome ----
+ const vplist=allPersons().filter(p=>p.vanoli&&roleset(p).includes('player')&&(S.player||{})[p.id]&&(p.last||'').length>=4);
+ const qwords=new Set(q.split(/[^a-z0-9]+/).filter(Boolean));
+ const hitP=vplist.find(p=>{const nl=qnorm(p.last);return /[ -]/.test(nl)?q.includes(nl):qwords.has(nl);});
+ if(hitP&&/(punti|segn|media|carrier|statistic|quant|valutazion|assist|rimbalz|presenz|minut|tripl)/.test(q)){
+   const st=S.player[hitP.id],tot=st.total||{},av=tot.avg||{};
+   return {title:surnameFirst(hitP)+' · carriera Vanoli',note:(ERA==='full'?'tutta la storia':'dal 2009/10'),cols:['Presenze','Punti','Media pt','Val media','Assist','Rimbalzi','Triple','Minuti'],rows:[[st.games,st.tot_pts,av.pts!=null?av.pts:'—',av.val!=null?av.val:'—',st.tot_ast,st.tot_rt,st.tot_3,st.tot_min]]};
+ }
+ // ---- aggregazioni sui risultati: per data / mese / giorno settimana ----
+ const resM=eraMatches().filter(m=>m.hs!=null&&m.vs!=null&&(m.result==='W'||m.result==='L'));
+ const prt=s=>{const a=String(s).slice(0,10).split('-');return a.length===3?{y:+a[0],m:+a[1],d:+a[2]}:null;};
+ const resCue=/(vinto|vittor|vince|successo|partite|gioca|risultat|bilancio|sconfit|perso|perse)/.test(q);
+ if(resCue&&/settimana/.test(q)){
+   const wd=['Domenica','Lunedì','Martedì','Mercoledì','Giovedì','Venerdì','Sabato'],agg={};
+   resM.forEach(m=>{const p=prt(m.date);if(!p)return;const k=wd[new Date(p.y,p.m-1,p.d).getDay()];const o=agg[k]=agg[k]||{w:0,g:0};o.g++;if(m.result==='W')o.w++;});
+   return {title:'Vittorie per giorno della settimana',cols:['Giorno','Vittorie','Gare','% V'],rows:topN(Object.keys(agg),k=>asc?agg[k].w/agg[k].g:agg[k].w).map(k=>[k,'<b>'+agg[k].w+'</b>',agg[k].g,(agg[k].w/agg[k].g*100).toFixed(0)+'%'])};
+ }
+ if(resCue&&/mese|mesi|mensil/.test(q)){
+   const mo=['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'],agg={};
+   resM.forEach(m=>{const p=prt(m.date);if(!p)return;const k=mo[p.m-1];const o=agg[k]=agg[k]||{w:0,g:0};o.g++;if(m.result==='W')o.w++;});
+   return {title:'Vittorie per mese',cols:['Mese','Vittorie','Gare','% V'],rows:topN(Object.keys(agg),k=>agg[k].w).map(k=>[k,'<b>'+agg[k].w+'</b>',agg[k].g,(agg[k].w/agg[k].g*100).toFixed(0)+'%'])};
+ }
+ if(resCue&&/giorno|data|calendario|anniversario/.test(q)){
+   const agg={};resM.forEach(m=>{const p=prt(m.date);if(!p)return;const k=String(p.d).padStart(2,'0')+'/'+String(p.m).padStart(2,'0');const o=agg[k]=agg[k]||{w:0,g:0};o.g++;if(m.result==='W')o.w++;});
+   const ks=Object.keys(agg).filter(k=>agg[k].w>0);return {title:'Giorni dell\'anno con più vittorie',note:'gg/mm',cols:['Data','Vittorie','Gare'],rows:topN(ks,k=>agg[k].w).map(k=>[k,'<b>'+agg[k].w+'</b>',agg[k].g])};
+ }
+ // ---- stagioni ----
+ if(/stagione|stagioni|annata|campionat/.test(q)){
+   const SE=S.season||{},sm=raw.match(/(\d{4})\s*[\/\-]\s*(\d{2,4})/);
+   if(sm){const key=Object.keys(SE).find(k=>k.slice(0,4)===sm[1]);const b=key&&SE[key]&&SE[key].total;if(b)return {title:'Stagione '+key,cols:['Record','Win%','Media punti','Miglior marcatore'],rows:[[b.w+'-'+b.l,b.winpct!=null?(b.winpct*100).toFixed(0)+'%':'—',b.avg_van!=null?b.avg_van:'—',b.top_scorer?linkName(b.top_scorer):'—']]};}
+   const ks=Object.keys(SE).filter(k=>SE[k].total&&SE[k].total.games);const pct=/%|win|percentual/.test(q);const f=pct?(k=>SE[k].total.winpct||0):(k=>SE[k].total.w||0);
+   return {title:'Stagioni · '+(pct?'Win%':'Vittorie'),cols:['#','Stagione',pct?'Win%':'Vittorie','Record'],rows:topN(ks,f).map((k,i)=>[i+1,`<a onclick="nav('season',{id:'${k.replace('/','-')}'})" style="color:var(--blue2);cursor:pointer">${k}</a>`,'<b>'+(pct?(SE[k].total.winpct*100).toFixed(0)+'%':SE[k].total.w)+'</b>',SE[k].total.w+'-'+SE[k].total.l])};
+ }
+ // ---- bilancio totale / casa / trasferta ----
+ if(/(quante|quanti|bilancio|totale|complessiv|in casa|in trasferta)/.test(q)&&/(vinto|vittor|partite|gioca|sconfit|bilancio|casa|trasferta|perso|perse)/.test(q)){
+   const homeOnly=/casa/.test(q)&&!/trasferta/.test(q),awayOnly=/trasferta/.test(q)&&!/casa/.test(q);
+   let set=resM;if(homeOnly)set=resM.filter(m=>m.side==='home');else if(awayOnly)set=resM.filter(m=>m.side!=='home');
+   const w=set.filter(m=>m.result==='W').length,l=set.length-w;
+   return {title:'Bilancio Vanoli'+(homeOnly?' in casa':awayOnly?' in trasferta':''),cols:['Gare','Vittorie','Sconfitte','% Vittorie'],rows:[[set.length,'<b>'+w+'</b>',l,set.length?(w/set.length*100).toFixed(1)+'%':'—']]};
+ }
  // giocatori Vanoli per metrica
  const PL=S.player||{};const pIds=Object.keys(PL);
  if(pIds.length){
@@ -1211,7 +1251,7 @@ function answerQuery(raw){
    const PM=[[/(valutazion|\bval\b)/,'tot_val','Valutazione tot.'],[/assist/,'tot_ast','Assist tot.'],[/rimbalz/,'tot_rt','Rimbalzi tot.'],[/minut/,'tot_min','Minuti tot.'],[/tripl|da tre|da 3/,'tot_3','Triple tot.'],[/presenz|partite|gare/,'games','Presenze'],[/(punti|segn|marcator|miglior)/,'tot_pts','Punti tot.']];
    let mk=null;for(const m of PM){if(m[0].test(q)){mk=m;break;}}
    if(!mk&&/(giocator|\bchi\b)/.test(q))mk=PM[PM.length-1];
-   if(mk){const key=mk[1];return {title:'Giocatori Vanoli · '+mk[2],cols:['#','Giocatore',mk[2],'Presenze'],rows:topN(pIds,i=>PL[i][key]||0).map((i,r)=>[r+1,plink(i),'<b>'+((PL[i][key]||0).toLocaleString('it-IT'))+'</b>',PL[i].games])};}
+   if(mk){const key=mk[1];const dupG=(key==='games');return {title:'Giocatori Vanoli · '+mk[2],cols:dupG?['#','Giocatore',mk[2]]:['#','Giocatore',mk[2],'Presenze'],rows:topN(pIds,i=>PL[i][key]||0).map((i,r)=>{const cell='<b>'+((PL[i][key]||0).toLocaleString('it-IT'))+'</b>';return dupG?[r+1,plink(i),cell]:[r+1,plink(i),cell,PL[i].games];})};}
  }
  return {error:true};
 }
